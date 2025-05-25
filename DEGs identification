@@ -51,3 +51,23 @@ for (i in c(1,0.5)){
   write.csv(transcript_down,paste("./DEGs/transcript_dif_down.",i,".pvalue.csv",sep=""))
   write.table(transcript_down$id,paste("./DEGs/transcript_dif_down.",i,".pvalue.id",sep=""),row.names = F,sep = "\t",col.names=F,quote = FALSE )
 }
+
+
+
+
+#####2.counts2TPM
+rm(list=ls())
+data <- read.csv(file = "./counts.csv",header = T,row.names  = 1,sep=",")
+head(data)
+dim(data)
+countMatrix<-as.matrix(data[,2:10])
+rownames(countMatrix)<- row.names(data)
+head(countMatrix)
+dim(countMatrix)
+genelength<-(data$Length)/1000
+norcounts<-countMatrix/genelength
+head(norcounts)
+dim(norcounts)
+TPM = t(t(norcounts)/colSums(norcounts)) * 10^6
+head(TPM)
+write.csv(TPM,"./gene_TPM.csv")
