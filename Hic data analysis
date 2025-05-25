@@ -1,0 +1,42 @@
+
+ -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --TAD鉴定 -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+###
+hicFindTADs  --matrix../HiCExplorer-PCA/SOL.allValidPairs.50000._KR.removel.Y.cool.cool  --minDepth250000  --maxDepth500000  --step 50000  --thresholdComparisons 0.01  --delta 0.05  --correctForMultipleTestingfdr -p 24  --outPrefix SOL.TAD.50.150000.500000.50000.0.01.0.05&
+
+####Juicer-APA
+java  -jar ~/biosoftware/juicer_tools_1.22.01.jar apa /BIGDATA2/scau_tinggu_1/HiC-analysis/331-hipro-1/hicpro-2_results/HiCExplorer-PCA/${sample}.allValidPairs.hic /BIGDATA2/scau_tinggu_1/HiC-analysis/331-hipro-1/hicpro-2_results/HiCCUPS_non_q30/10_25k/specific.EDL.loop.bedpe  -k KR -n 30 -w 10 -r 25000,10000,5000 -q 6,6,3 -c 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,X /BIGDATA2/scau_tinggu_1/HiC-analysis/331-hipro-1/hicpro-2_results/loop-apa/EDL-specific-loop/${sample}-apa/   --threads 1  
+
+###FANC计算direction-index
+for sample in SOL EDL;do  fanc directionality ../../HiCExplorer-PCA/${sample}.allValidPairs.hic@50kb@KR  ${sample}.50kb.KR.DI;done
+for sample in SOL EDL;do  fanc directionality ${sample}.50kb.KR.DI -o bed;done
+for sample in SOL EDL;do  fanc directionality ${sample}.50kb.KR.DI -o  bigwig;done
+fanc boundaries SOL.50kb.KR.insulstion SOL.50kb.KR.boundaries
+fanc boundaries EDL.50kb.KR.insulstion EDL.50kb.KR.boundaries
+
+
+
+ -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --Loop鉴定 -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+###HiCcups
+java -jar ~/biosoftware/juicer_tools_1.22.01.jar hiccups -m  2048 -k KR --threads 24 --cpu -r 5000,10000,25000 -d 20000,20000,50000 -c 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,X -f 0.1,0.1,0.1 -p 4,2,1 -i 7,5,3 -t 0.02,1.5,1.75,2 SOL.allValidPairs.hic SOL_hiccups_results_cpu_5_10_20
+
+####Juicer-APA
+java  -jar ~/biosoftware/juicer_tools_1.22.01.jar apa /BIGDATA2/scau_tinggu_1/HiC-analysis/331-hipro-1/hicpro-2_results/HiCExplorer-PCA/${sample}.allValidPairs.hic /BIGDATA2/scau_tinggu_1/HiC-analysis/331-hipro-1/hicpro-2_results/HiCCUPS_non_q30/10_25k/specific.EDL.loop.bedpe  -k KR -n 30 -w 10 -r 25000,10000,5000 -q 6,6,3 -c 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,X /BIGDATA2/scau_tinggu_1/HiC-analysis/331-hipro-1/hicpro-2_results/loop-apa/EDL-specific-loop/${sample}-apa/   --threads 1  
+
+
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- ---
+####ChromHMM
+####/public/home/tanbh/ChIP-seq/SOL-EDL-ChromHMM
+java -mx1600M -jar ~/ChIP-seq/ChromHMM-1.24/ChromHMM.jar BinarizeBam -paired -gzip chr_size.txt ./bamsample.txt binarytion&
+java -jar~/ChIP-seq/ChromHMM-1.24/ChromHMM.jar LearnModel -p10 ./EDL.binarytion/ test6 Sus11
+
+####3D-genome model
+##env m6A
+##fold a path  -- -- -- -- -- -- ---/public/home/tanbh/ChIP-seq/SOL-EDL-HiC/331/MATRIX
+##1.文件格式转换
+python ~/ChIP-seq/miniMDS-m aster/scripts/hicpro_to_bedpe.py SOL_10000_abs.bed SOL_10000_iced.matrix SOL.miniMDS.bed&
+python ~/ChIP-seq/miniMDS-m aster/scripts/hicpro_to_bedpe.py EDL_10000_abs.bed EDL_10000_iced.matrix EDL.miniMDS.bed&
+awk '$1>30000000'  SOL.10k.bed | awk '$1<55000000' | awk '$2>35000000' | awk '$2<55000000' > SOL.10k.35.55mb.bed &
+factor=0.8
+python ~/ChIP-seq/miniMDS-master/minimds.py -n 5   EDL.miniMDS.bed&
+python ~/ChIP-seq/miniMDS-master/minimds.py -n 5   SOL.miniMDS.bed&
+bash   structure_txo_yz.sh    /data/hic_1_100kb_structure.tsv
