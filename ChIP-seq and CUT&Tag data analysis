@@ -1,0 +1,32 @@
+##mapping
+bwa_index =/public/home/tanbh/ChIP-seq/ensemble_Sus.11.102/Bwa_index /Sus_scrofa.Sscrofa11.1.dna.toplevel.fa.gz
+bwa mem -t 5 -M ${bwa_index } ${fq1} ${fq2} 2 >${sample}.log|samtools sort -O bam -@ 5 -o- >${sample}.raw.bam
+##
+
+###.kepp unique reads
+conda activate Deeptools
+nohup ls *raw.bam|while read id;do sambamba view -h -t 5 -f bam -p -f "[XS]==null and not unmapped" ${id} -o ${id%%.*}.unique.bam 2>sambamba_filter.log;done&
+
+
+###.bamtobw
+conda activate Deeptools
+ls *merge.unique.rmdup.MT.bam|while read id;do  bamCoverage -p 5 --normalizeUsing RPKM  -b  ${id} -o ${id%%.*}.merge.bw;done&
+bamCompare  -b 1 EDL-27ac.merge.unique.rmdup.MT.bam  -b 2 EDL-IgG.merge.unique.rmdup.MT.bam --scaleFactorsMethod None --normalizeUsing RPKM- o EDL-27ac.igG.bw&
+bamCompare  -b 1 SOL-27ac.merge.unique.rmdup.MT.bam  -b 2 SOL-IgG.merge.unique.rmdup.MT.bam --scaleFactorsMethod None --normalizeUsing RPKM -o SOL-27ac.igG.bw&
+bamCompare  -b 1 EDL-43.merge.unique.rmdup.MT.bam  -b 2 EDL-IgG.merge.unique.rmdup.MT.bam --scaleFactorsMethod None --normalizeUsing RPKM -o EDL-43.igG.bw&
+bamCompare  -b 1 SOL-43.merge.unique.rmdup.MT.bam  -b 2 SOL-IgG.merge.unique.rmdup.MT.bam --scaleFactorsMethod None --normalizeUsing RPKM- o SOL-43.igG.bw&
+
+###6.macs2 callpeak
+cat 3|while read id;do  macs2 callpeak -t ${id}.merge.unique.rmdup.MT.bam.unique.rmdup.MT.sortbyname.bedpe.tagAlign.gz -c ${id%-*}-IgG.merge.unique.rmdup.MT.bam.unique.rmdup.MT.sortbyname.bedpe.tagAlign.gz  -f  BED -n ${id}-g 2.8e9 -p 0.00001 --shift0 --extsize 150 --nomodel  -b  --SPMR --keep-dup all --call-summits --outdir ./macs2_0.01;done
+cat 3|while read id;do  macs2 callpeak -t ${id}.merge.unique.rmdup.MT.bam.unique.rmdup.MT.sortbyname.bedpe.tagAlign.gz -c ${id%-*}-IgG.merge.unique.rmdup.MT.bam.unique.rmdup.MT.sortbyname.bedpe.tagAlign.gz  -f  BED -n ${id}-g 2.8e9 -p 0.01 --shift 0 --extsize 150 --nomodel  -b  --SPMR --keep-dup all --call -summits --outdir ./macs2_0.01;done
+
+
+ ###ROSE鉴定超级增强子
+ #python ~/ChIP-seq/SOL-EDL-cut/rose/ROSE_main.py -r /public/home/tanbh/ChIP-seq/SOL-EDL-cut/2_dedeupbam_MT/merge/EDL-27ac.merge.unique.rmdup.MT.chr.bam  -c /public/home/tanbh/ChIP-seq/SOL-EDL-cut/2_dedeupbam_MT/merge/EDL-IgG.merge.unique.rmdup.MT.chr.bam -i EDL.gff -g SS11 -o ./
+
+
+####SE的motif分析
+conda activate homer
+pwd:public/home/tanbh/ChIP-seq/cut/identification/superpromoter/EDL_superpromoter
+less -S pig-EDL-promoter_Superpromoters.table.bed|awk '{print$4,"chr"$1,$2,$3,"+"}'|sed 's//\t/g'|less-S >homer_SE.tmp
+findMotifsGenome.pl homer_SE.tmpsus Scr11 homer_EDL -len 8,10,12 -gc&
