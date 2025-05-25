@@ -1,0 +1,109 @@
+ls /public/home/tanbh/ChIP-seq/ATAC-seq/YZ22050601/first/Cleandata/SOL*_R1.fq.gz >1
+ls /public/home/tanbh/ChIP-seq/ATAC-seq/YZ22050601/first/Cleandata/SOL*_R2.fq.gz >2
+ls /public/home/tanbh/ChIP-seq/ATAC-seq/YZ22050601/first/Cleandata/SOL*_R1.fq.gz |cut -d "/" -f 10|cut -d "_" -f 1|less -S > 0
+paste 0 1 2|less -S > config.clean
+ls /public/home/tanbh/ChIP-seq/ATAC-seq/*.raw.bam|cut -d "/" -f 7|cut -d "." -f 1 |less -S > 3  
+bowtie2_index=/public/home/tanbh/ChIP-seq/ATAC-seq/bowtie2-index/bowtie2-indx 
+bed=/public/home/tanbh/ChIP-seq/ensemble_Sus.11.102/gtf.106.TSS.bed
+conda activate Chipseq
+cat 3 |while read id;
+do
+echo $id
+arr=($id) 
+sample=${arr[0]}
+fq1=${arr[1]}
+fq2=${arr[2]}
+###1.bowtie2 mapping
+bowtie2  -p 5  --very-sensitive -X 2000 -x ${bowtie2_index} -1 $fq1 -2 $fq2 2> ${sample}.bowtie2.log |samtools sort  -O bam  -@ 5 -o - > ${sample}.raw.bam 
+done 
+!
+###2.kepp unique reads
+conda activate Deeptools
+ls *raw.bam | while read id;do sambamba view -h -t 2 -f bam  -F "[XS] == null and not unmapped"  ${id} > ${id%%.*}.unique.bam; done &
+conda deactivate Deeptools
+
+###3.keep dedup reads
+ls *unique.bam |while read id; do picard MarkDuplicates REMOVE_DUPLICATES= true VALIDATION_STRINGENCY=LENIENT I= ${id} O= ${id%%.*}.unique.rmdup.bam M=${id%%.*}.unique.rmdup.metris ;done&
+ls *unique.rmdup.bam |while read id; do samtools index ${id}.unique.rmdup.bam;done &
+
+###4.kepp q>25 rmMT reads
+ls *unique.rmdup.bam |while read id ;do samtools view  -h  -f 2 -q 25  ${id}   |grep -v MT |samtools sort  -O bam  -@ 5 -o - > ${id%%.*}.unique.rmdup.MT.bam;done 
+ls *unique.rmdup.MT.bam |while read id ;do samtools index ${id};done 
+ls *unique.rmdup.MT.bam|while read id ;do samtools flagstat  ${id}.unique.rmdup.MT.bam > ${id}.unique.rmdup.MT.stat ;done 
+
+###5.bam to tag
+ls *unique.rmdup.MT.bam|while read id ; do samtools sort -n ${id} -@ 5 > ${id}.unique.rmdup.MT.sortbyname.bam;done
+ls *unique.rmdup.MT.sortbyname.bam|while read id ; do bedtools bamtobed -bedpe -mate1 -i   ${id}| gzip -nc > ${id%.*}.bedpe.gz ;done
+ls *.unique.rmdup.MT.sortbyname.bedpe.gz|while read id ;do zcat ${id} | awk 'BEGIN{OFS="\t"}{printf "%s\t%s\t%s\tN\t1000\t%s\n%s\t%s\t%s\tN\t1000\t%s\n",$1,$2,$3,$9,$4,$5,$6,$10}' | gzip -nc > ${id%.*}.tagAlign.gz;done
+
+###6.macs2 callpeak
+smooth_window=150 # default
+shiftsize=$(( -$smooth_window/2 ))
+pval_thresh=0.01
+ls *.MT.sortbyname.bedpe.tagAlign.gz |while read id ;do macs2 callpeak -t ${id} -f BED -n ${id%%.*} -g 2.8e9 -p $pval_thresh  --shift $shiftsize --extsize $smooth_window --nomodel -B --SPMR --keep-dup all --call-summits --outdir ./macs2;done
+
+###6.1peak_filter&&merge
+ls *./macs2/narrow*|while read id;do less -S ${id}|awk '$8>5{print $0}' |less -S > filter1.${id};done &
+for id in EDL SOL; do cat filter1.${id}*_peaks.narrowPeak  >filter1.${id}.pool.narrowPeak;done &
+bedtools intersect  -wo  -a  filter1.EDL.pool.narrowPeak -b filter1.EDL2_peaks.narrowPeak | awk 'BEGIN{{FS="\\t";OFS="\\t"}} {s1=$3-$2; s2=$13-$12; if (($21/s1 >= 0.5) || ($21/s2 >= 0.5)) {print $0}}' | cut -f 1-10|sort|uniq |bedtools  intersect -wo -a - -b filter1.EDL3_peaks.narrowPeak|awk 'BEGIN{{FS="\\t";OFS="\\t"}} {s1=$3-$2; s2=$13-$12; if (($21/s1 >= 0.5) || ($21/s2 >= 0.5)) {print $0}}' |cut -f 1-10 |sort|uniq> EDL_intersect.bed
+bedtools intersect  -wo  -a  filter1.SOL.pool.narrowPeak -b filter1.SOL2_peaks.narrowPeak | awk 'BEGIN{{FS="\\t";OFS="\\t"}} {s1=$3-$2; s2=$13-$12; if (($21/s1 >= 0.5) || ($21/s2 >= 0.5)) {print $0}}' |cut -f 1-10|sort|uniq |bedtools  intersect -wo -a - -b filter1.SOL3_peaks.narrowPeak|awk 'BEGIN{{FS="\\t";OFS="\\t"}} {s1=$3-$2; s2=$13-$12; if (($21/s1 >= 0.5) || ($21/s2 >= 0.5)) {print $0}}' |cut -f 1-10 |sort|uniq> SOL_intersect.bed
+for id in EDL SOL; do sort -k1,1 -k2,2n -i ${id}_intersect.bed > ${id}.intersect.sort.bed;done&
+for id in EDL SOL; do bedtools merge -i ${id}.intersect.sort.bed > ${id}.intersect.sort.merge.bed;done&
+for id in EDL SOL; do awk '{print $1,$2,$3,"${id}_peak"NR,$3-$2,"."}' ${id}.intersect.sort.merge.bed|sed 's/ /\t/g'> ${id}.final.peak;done&
+echo "macs2 callpeak done"
+
+####
+
+
+###7.bam to bw
+conda activate Deeptools
+ls *.unique.rmdup.MT.bam |while read id ;do bamCoverage -p 5 --normalizeUsing RPKM -b ${id} -o ${id%.*}.bw;done & 
+conda deactivate Deeptools
+
+###8.TSS enrichment heatmap 
+conda activate Deeptools 
+computeMatrix  reference-point -p 10 --referencePoint TSS -b 2000 -a 2000 -S *.bw -R /public/home/tanbh/ChIP-seq/ensemble_Sus.11.102/gtf.106.TSS.bed -o TSS2k.enrich.gz  --missingDataAsZero --skipZeros 2> TSS.log 
+plotProfile --dpi 720 -m TSS2k.enrich.gz  -out TSS2k.enrich.profile.pdf --plotFileFormat pdf --perGroup &
+plotHeatmap --dpi 720 -m TSS2k.enrich.gz -out TSS2k.enrich.headmap.pdf --plotFileFormat pdf &
+conda deactivate Deeptools
+
+###9.PCC&PCA
+conda activate Deeptools 
+multiBamSummary bins -b *.unique.rmdup.MT.bam --binSize 2000 --outRawCounts bin_2k.raw.counts -p 10 -o all.2k.npz &
+conda deactivate Deeptools
+
+###11. Fragment
+ls *.unique.rmdup.MT.bam|while read id ;do\
+picard CollectInsertSizeMetrics \
+I=${id} \
+O=${id%%.*}.insertsize \
+H=${id%%.*}.hist.pdf;\
+done
+
+####
+###9.Calculate %mtDNA:
+ls *.unique.rmdup.bam|while read id ;do\
+mtReads=$(samtools idxstats  ${id}| grep 'chrM' | cut -f 3)\
+totalReads=$(samtools idxstats  ${id} | awk '{SUM += $3} END {print SUM}')\
+echo '==> mtDNA Content:' $(bc <<< "scale=2;100*$mtReads/$totalReads")'%' > mtDNA_radio.txt ;\
+done
+
+
+####10.Calculate FRIP
+ls *.unique.rmdup.MT.bam|while read id ;do bedtools bamtobed -i ${id} > ${id%.*}.bed;done 
+ls *.bed |while read bed ;do echo $bed >> FRIP.results.txt
+Reads=$(bedtools intersect -a ${bed} -b ./macs2/filter1.${bed%%.*}_peaks.narrowPeak |wc -l|awk '{print $1}')
+totalReads=$(wc -l $bed|awk '{print $1}')
+echo $Reads $totalReads >> FRIP.results.txt
+echo '==> FRiP value:' $(bc <<< "scale=2;100*$Reads/$totalReads")'%' >> FRIP.results.txt
+done 
+
+
+
+
+
+
+
+
+
+
