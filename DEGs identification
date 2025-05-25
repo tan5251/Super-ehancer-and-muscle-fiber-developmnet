@@ -1,20 +1,14 @@
 
 ##DEG-identification
+library(DESeq2)
 rm(list=ls())
 data <- read.csv(file = "./counts.csv",header = T,sep=",",row.names = 1)
 data$id <- row.names(data) 
-head(data)
-library(DESeq2)
-#data <- read.csv(file = "./lncRNA_counts.csv",header = T,row.names = 1)
-data1 <- data[,c(2,4,5,8:10)]
-head(data1)
 #data2 <-  data1[apply(data1,1,function(x){sum(x)>10}),]
 # data1 <-data [,c(4:6,1:3)]
-# colnames(data1) <- c("SOL_1","SOL_2","SOL_3","EDL_1","EDL_2","EDL_3")
-#colnames(data) <- c("d33_rep1","d65_rep2","d65_rep3","d90_rep1","d90_rep2","d90_rep3")
-#dif <- dif.filter[-grep("novel",rownames(dif.filter)),]
+colnames(data1) <- c("SOL_1","SOL_2","SOL_3","EDL_1","EDL_2","EDL_3")
 
-sample_df <- data.frame(condition = factor(c(rep("OV",3),rep("PC",3))))
+sample_df <- data.frame(condition = factor(c(rep("SOL",3),rep("EDL",3))))
 rownames(sample_df) <- colnames(data1)
 deseq <- DESeqDataSetFromMatrix(countData = data1, colData = sample_df, design= ~condition) 
 deseq.obj <- DESeq(deseq) 
